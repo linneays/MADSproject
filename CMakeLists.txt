@@ -134,7 +134,7 @@ include_directories(${json_SOURCE_DIR}/include)
 
 # These plugins are always build and use for testing
 add_plugin(ego_state_filter)
-
+add_plugin(gyro_bias_agent)
 
 # INSTALL ######################################################################
 if(APPLE)

@@ -51,7 +51,7 @@ public:
 
   // driver: standstill detection. calibrated_imu: store the gyro reading,
   // which triggers one update in process()
-  return_type load_data(json const &input, string topic = "") override {
+  return_type load_data(json const &input, string topic = "", vector<unsigned char> const *blob = nullptr) override {
     if (topic == "driver") {
       if (!input.contains("encoders")) return return_type::error;
       double n_L = input["encoders"].value("left", 0.0);
@@ -76,7 +76,7 @@ public:
   }
 
   // One update of the bias estimate per new gyro sample
-  return_type process(json &out) override {
+  return_type process	(json &out, vector<unsigned char> *blob = nullptr) override {
     out.clear();
 
     // Run only once per new gyro sample
@@ -108,7 +108,7 @@ public:
     return return_type::success;
   }
 
-  void set_params(void const *params) override {
+  void set_params(const json &params) override {
     // Call the parent class method to set the common parameters
     // (e.g. agent_id, etc.)
     Filter::set_params(params);
@@ -121,7 +121,7 @@ public:
     _params["max_rate"] = _max_rate;         // [rad/s] outlier threshold
 
     // params needs to be cast to json
-    _params.merge_patch(*(json *)params);
+    _params.merge_patch(params);
 
     _still_min = _params["still_min"].get<int>();
     _imu_period = _params["imu_period"].get<double>();
@@ -172,7 +172,7 @@ private:
                 |___/
 Enable the class as plugin
 */
-INSTALL_FILTER_DRIVER(GyroBiasAgentPlugin, json, json);
+MADS_REGISTER_PLUGINS(GyroBiasAgentPlugin);
 
 
 /*
@@ -192,7 +192,7 @@ int main(int argc, char const *argv[])
   json params, output;
 
   params["still_min"] = 10;
-  plugin.set_params(&params);
+  plugin.set_params(params);
 
   json driver;
   driver["encoders"] = {{"left", 1863}, {"right", 3581}};

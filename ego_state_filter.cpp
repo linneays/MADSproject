@@ -277,7 +277,8 @@ public:
       {"Tc", Tc}, {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
       {"mu", mu}, {"rho", rho}, {"xi_R", xi_R},
       {"delta_EG", delta_EG}, {"delta_H", delta_H}, {"delta_F", delta_F},
-      {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H}
+      {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H},
+  
     };
 
     // ---- 11. Update stored states for next iteration --------------------
