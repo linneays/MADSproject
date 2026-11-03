@@ -162,6 +162,11 @@ public:
       _delta_H_raw = atan2(H[1][0].get<double>(), H[0][0].get<double>());
       _htc_received = true;
     }
+    else if (topic == "gyro_bias") {
+      // Estimate from gyro_bias_agent (published only while standing still);
+      // keep the previous value if the field is missing
+      _gyro_bias = input.value("bias", _gyro_bias);
+    }
     return return_type::success;
   }
 
