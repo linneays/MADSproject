@@ -1,0 +1,11 @@
+fc_delta = 10;
+Tc = 0.03;
+wc_delta = 2 * pi * fc_delta;
+[Bh_delta, A_delta] = butter(3, wc_delta, 'high', 's');
+Bl_delta = A_delta - Bh_delta;
+Hhp_delta_s = tf(Bh_delta, A_delta);
+Hlp_delta_s = tf(Bl_delta, A_delta);
+Hhp_delta_z = c2d(Hhp_delta_s, Tc, 'tustin');
+Hlp_delta_z = c2d(Hlp_delta_s, Tc, 'tustin');
+[bh_delta, ah_delta] = tfdata(Hhp_delta_z, 'v');
+[bl_delta, al_delta] = tfdata(Hlp_delta_z, 'v');
