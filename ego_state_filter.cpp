@@ -140,7 +140,6 @@ public:
   // The perception loop is triggered by the driver (encoder) topic.
   return_type load_data(json const &input, string topic = "") override {
     if (topic == "driver") {
-      // TODO: check if the left encoder has an inverted sign (mirrored motor)
       if (!input.contains("encoders")) return return_type::error;
       _n_L = input["encoders"].value("left", 0.0);
       _n_R = input["encoders"].value("right", 0.0);
@@ -153,22 +152,22 @@ public:
     }
     else if (topic == "htc") {
       // Htracker = midpoint between the wheels (Htracker_raw = tracker itself)
-      // TODO: verify which position components are the planar x, y and
-      //       which Euler angle is the yaw, in the HTC reference frame
       if (!input.contains("Htracker")) return return_type::error;
       json const &pose = input["Htracker"]["pose"];
       _x_H = pose["position"][0].get<double>();
       _y_H = pose["position"][1].get<double>();
-      _delta_H_raw = pose["attitude"][2].get<double>();
+      // Yaw from the rotation matrix 
+      //(because a specific orientation or final position in 3D space can often be described by different sets of Euler angles.)
+      json const &H = pose["H"];
+      _delta_H_raw = atan2(H[1][0].get<double>(), H[0][0].get<double>());
       _htc_received = true;
     }
     return return_type::success;
   }
 
-  // One iteration k-1 -> k of the perception loop (slide 41)
+  // One iteration k-1 -> k of the perception loop 
   return_type process(json &out) override {
     out.clear();
-
     // Run only once per new encoder sample
     // TODO: check that return_type::retry makes the agent skip publishing
     if (!_new_driver) return return_type::retry;
@@ -268,8 +267,7 @@ public:
     _params["Tc"] = 0.03;              // [s] nominal perception-loop period
 
     // Dummy filter coefficients: HP branch = 0, LP branch = 1, i.e. the
-    // output is just the HTC measurement. Replace with the MATLAB values
-    // (bh_*, bl_*, ah_*). Complementarity requires b_hp + b_lp = a.
+    // output is just the HTC measurement. 
     _params["attitude_filter"] = {
       {"a",    {1.0, 0.0, 0.0, 0.0}},
       {"b_hp", {0.0, 0.0, 0.0, 0.0}},
@@ -365,8 +363,7 @@ private:
   }
 
   // ---- Step 10 helper ---------------------------------------------------
-  // Fused pose as a 4x4 homogeneous transformation (slide 52)
-  // TODO: compare the rotation convention with the reference ego_state topic
+  // Fused pose as a 4x4 homogeneous transformation 
   void write_output(json &out, double x, double y, double delta) {
     double c = cos(delta), s = sin(delta);
     out["H"] = {
