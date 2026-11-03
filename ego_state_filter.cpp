@@ -12,7 +12,7 @@
 # Inputs (sub_topic):  driver, calibrated_imu, htc
 # Output (pub_topic):  ego_state_<group number>   (set in the .ini file)
 #
-# The perception loop follows the flowchart on slide 41:
+# The perception loop follows the flowchart given for the project:
 #   1. Encoder increments             -> ds_E, ddelta_E
 #   2. Gyro increment                 -> ddelta_G
 #   3. Maneuver-dependent weights     -> mu, rho, xi_R
@@ -59,7 +59,7 @@ static double wrap(double angle) {
   return atan2(sin(angle), cos(angle));
 }
 
-// Third-order discrete IIR filter (slide 32):
+// Third-order discrete IIR filter:
 //   y_k = -sum_{i=1..3} a_i y_{k-i} + sum_{i=0..3} b_i x_{k-i}
 // Coefficients come from MATLAB c2d(..., 'tustin') + tfdata(..., 'v').
 struct Iir3 {
@@ -347,7 +347,7 @@ private:
   }
 
   // ---- Step 3 helpers ---------------------------------------------------
-  // mu_k: 0 = straight path, 1 = turning on the spot (slide 22)
+  // mu_k: 0 = straight path, 1 = turning on the spot 
   double turning_index(double ds_R, double ds_L) {
     return fabs(ds_R - ds_L) / (fabs(ds_R) + fabs(ds_L) + _epsilon);
   }
@@ -355,20 +355,13 @@ private:
   // rho_k = f_rho(|ds_R| + |ds_L|), in [0, 1]: 0 = standing, 1 = moving
   double motion_index(double ds_R, double ds_L) {
     double s = fabs(ds_R) + fabs(ds_L);
-    // TODO: define the continuous function f_rho
-    (void)s;
-    return 1.0;
+    double scale = 0.02; //[m] needs tuning
+    return 1.0 - exp(-s/scale);
   }
 
-  // xi_R = f_xi(mu, rho) = sigma_E / sigma_G (slides 22, 25-27)
-  // Must be a smooth function (no discrete steps as in the 2003 paper)
+  // xi_R = f_xi(mu, rho) = sigma_E / sigma_G 
   double accuracy_ratio(double mu, double rho) {
-    // TODO: define the continuous function f_xi, e.g. interpolating the
-    //       values of Table 1 (standing 0, straight 0.25, curving 2,
-    //       steering 4). _sigma_gyro can be used for sigma_G.
-    (void)mu;
-    (void)rho;
-    return 1.0; // dummy: equal weights for encoder and gyro
+    return rho*(0.25+3.75*mu);
   }
 
   // ---- Step 10 helper ---------------------------------------------------
