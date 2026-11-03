@@ -26,6 +26,7 @@
 #  11. Update stored states for the next iteration
 */
 // Mandatory included headers
+#define _USE_MATH_DEFINES 
 #include <filter.hpp>
 #include <nlohmann/json.hpp>
 #include <pugg/Kernel.h>
@@ -156,7 +157,7 @@ public:
 
   // Store the latest message of each input topic.
   // The perception loop is triggered by the driver (encoder) topic.
-  return_type load_data(json const &input, string topic = "") override {
+  return_type load_data(json const &input, string topic = "", vector<unsigned char> const *blob = nullptr) override {
     if (topic == "driver") {
       if (!input.contains("encoders")) return return_type::error;
       _n_L = input["encoders"].value("left", 0.0);
@@ -197,7 +198,7 @@ public:
   }
 
   // One iteration k-1 -> k of the perception loop 
-  return_type process(json &out) override {
+  return_type process(json &out, vector<unsigned char> *blob = nullptr) override {
     out.clear();
     // Run only once per new encoder sample
     // TODO: check that return_type::retry makes the agent skip publishing
@@ -275,7 +276,7 @@ public:
     out["debug"] = {
       {"Tc", Tc}, {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
       {"mu", mu}, {"rho", rho}, {"xi_R", xi_R},
-      {"delta_EG", delta_EG}, {"delta_H", delta_H},
+      {"delta_EG", delta_EG}, {"delta_H", delta_H}, {"delta_F", delta_F},
       {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H}
     };
 
@@ -293,7 +294,7 @@ public:
     return return_type::success;
   }
 
-  void set_params(void const *params) override {
+  void set_params(const json &params) override {
     // Call the parent class method to set the common parameters
     // (e.g. agent_id, etc.)
     Filter::set_params(params);
@@ -318,7 +319,7 @@ public:
     _params["position_filter"] = _params["attitude_filter"];
 
     // params needs to be cast to json
-    _params.merge_patch(*(json *)params);
+    _params.merge_patch(params);
 
     _wheel_radius = _params["wheel_radius"].get<double>();
     _wheel_base = _params["wheel_base"].get<double>();
@@ -487,7 +488,7 @@ int main(int argc, char const *argv[])
 
   params["wheel_radius"] = 0.1;
   params["wheel_base"] = 0.5;
-  plugin.set_params(&params);
+  plugin.set_params(params);
 
   json htc;
   htc["Htracker"]["pose"]["position"] = {0.0, 0.0, 0.0};
