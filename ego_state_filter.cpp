@@ -34,6 +34,7 @@
 // other includes as needed here
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 
 // Define the name of the plugin
@@ -58,6 +59,23 @@ using json = nlohmann::json;
 // Wrap an angle to (-pi, pi]
 static double wrap(double angle) {
   return atan2(sin(angle), cos(angle));
+}
+
+// Message time [s], as seconds since midnight from the millisecond
+// timestamp, e.g. {"$date": "2026-10-08T12:28:02.650+0200"} -> 44882.650.
+// The "timecode" field is only a fallback: it changes in steps of 0.05 s.
+static double message_time(json const &msg) {
+  if (msg.contains("timestamp") && msg["timestamp"].is_object() &&
+      msg["timestamp"].contains("$date")) {
+    string date = msg["timestamp"]["$date"].get<string>();
+    size_t t = date.find('T');
+    int h, m;
+    double s;
+    if (t != string::npos &&
+        sscanf(date.c_str() + t + 1, "%d:%d:%lf", &h, &m, &s) == 3)
+      return h * 3600.0 + m * 60.0 + s;
+  }
+  return msg.value("timecode", -1.0);
 }
 
 // Third-order discrete IIR filter:
@@ -144,12 +162,20 @@ public:
       if (!input.contains("encoders")) return return_type::error;
       _n_L = input["encoders"].value("left", 0.0);
       _n_R = input["encoders"].value("right", 0.0);
-      _driver_time = input.value("timecode", 0.0);
+      _driver_time = message_time(input);
       _new_driver = true;
     }
     else if (topic == "calibrated_imu") {
       _omega_G = input.value("gyro", 0.0);
       _imu_received = true;
+
+      // Integrate the gyro between two loop iterations, so that no IMU
+      // sample is lost when the loop runs slower than the IMU (step 2)
+      double t = message_time(input);
+      double dt = t - _imu_time_prev;
+      if (_initialized && _imu_time_prev >= 0.0 && dt > 0.0 && dt < _max_imu_gap)
+        _gyro_angle += (_omega_G - _gyro_bias) * dt;
+      _imu_time_prev = t;
     }
     else if (topic == "htc") {
       // Htracker = midpoint between the wheels (Htracker_raw = tracker itself)
@@ -186,8 +212,18 @@ public:
       return return_type::retry;
     }
 
-    // Perception-loop period (measured from the driver timecode)
-    double Tc = _Tc;
+    // Run the loop every Tc seconds: the filter coefficients are designed
+    // for Tc. Driver messages arrive every ~8 ms, so most are skipped; the
+    // encoder counts are cumulative, so no ticks are lost.
+    // Adding Tc to the deadline (instead of "now + Tc") keeps the average
+    // period at exactly Tc, even if single steps are 24 or 32 ms.
+    if (_driver_time < _next_loop_time - 1e-6) return return_type::retry;
+    _next_loop_time += _Tc;
+    if (_driver_time >= _next_loop_time)       // gap in the data: restart
+      _next_loop_time = _driver_time + _Tc;
+
+    // Actual duration of this iteration (for debugging)
+    double Tc = _driver_time - _driver_time_prev;
 
     // HTC attitude made continuous, so it can be filtered together with delta_EG
     double delta_H = unwrap_htc_attitude(_delta_H_raw);
@@ -201,8 +237,10 @@ public:
     double ddelta_E = (ds_R - ds_L) / _wheel_base;
 
     // ---- 2. Gyro increment ----------------------------------------------
-    // TODO: estimate b_G (e.g. while standing, or with another MADS agent)
-    double ddelta_G = Tc * (_omega_G - _gyro_bias);
+    // Sum of (omega_G - b_G) * dt over the IMU samples since the last
+    // iteration (integrated in load_data)
+    double ddelta_G = _gyro_angle;
+    _gyro_angle = 0.0;
 
     // ---- 3. Maneuver-dependent weights ----------------------------------
     double mu = turning_index(ds_R, ds_L);
@@ -236,7 +274,7 @@ public:
 
     // Extra fields, useful for debugging/plotting the single branches
     out["debug"] = {
-      {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
+      {"Tc", Tc}, {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
       {"mu", mu}, {"rho", rho}, {"xi_R", xi_R},
       {"delta_EG", delta_EG}, {"delta_H", delta_H}, {"delta_F", delta_F},
       {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H}
@@ -326,6 +364,8 @@ private:
     _n_R_prev = _n_R;
     _n_L_prev = _n_L;
     _driver_time_prev = _driver_time;
+    _next_loop_time = _driver_time + _Tc;
+    _gyro_angle = 0.0;
 
     _delta_H_prev = _delta_H_raw;
     _delta_H_unwrapped = _delta_H_raw;
@@ -388,11 +428,15 @@ private:
   double _gyro_bias = 0.0;
   double _Tc = 0.03;
   double _epsilon = 1e-9;
+  double _max_imu_gap = 0.2;       // [s] longer IMU gaps are not integrated
 
   // ---- Latest input data ------------------------------------------------
   double _n_R = 0.0, _n_L = 0.0;   // cumulative encoder counts
-  double _driver_time = 0.0;       // driver timecode [s]
+  double _driver_time = 0.0;       // driver message time [s]
   double _omega_G = 0.0;           // gyro yaw rate [rad/s]
+  double _imu_time_prev = -1.0;    // time of the previous IMU message [s]
+  double _gyro_angle = 0.0;        // integrated gyro since last iteration [rad]
+  double _next_loop_time = 0.0;    // time of the next loop iteration [s]
   double _x_H = 0.0, _y_H = 0.0;   // HTC position [m]
   double _delta_H_raw = 0.0;       // HTC yaw [rad], wrapped
   bool _new_driver = false;
@@ -448,24 +492,30 @@ int main(int argc, char const *argv[])
 
   json htc;
   htc["Htracker"]["pose"]["position"] = {0.0, 0.0, 0.0};
-  htc["Htracker"]["pose"]["attitude"] = {0.0, 0.0, 0.0};
-  htc["Htracker"]["pose"]["H"] = {{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}};
+  htc["Htracker"]["pose"]["H"] = {
+    {1.0, 0.0, 0.0, 0.0}, {0.0, 1.0, 0.0, 0.0},
+    {0.0, 0.0, 1.0, 0.0}, {0.0, 0.0, 0.0, 1.0}
+  };
 
+  // Drive straight: driver messages every 8 ms, both encoders advance by
+  // 16 tics per message. The loop should run about every 4th message.
+  for (int k = 0; k < 20; k++) {
+    double t = 0.008 * k;
 
-  json imu;
-  imu["gyro"] = 0.0;
-
-  // Drive straight: both encoders advance by 100 tics per sample
-  for (int k = 0; k < 5; k++) {
     json driver;
-    driver["encoders"] = {{"left", 100 * k}, {"right", 100 * k}};
-    driver["timecode"] = 0.03 * k;
+    driver["encoders"] = {{"left", 16 * k}, {"right", 16 * k}};
+    driver["timecode"] = t;
+
+    json imu;
+    imu["gyro"] = 0.0;
+    imu["timecode"] = t;
 
     plugin.load_data(htc, "htc");
     plugin.load_data(imu, "calibrated_imu");
     plugin.load_data(driver, "driver");
     if (plugin.process(output) == return_type::success)
-      cout << "k = " << k << ": " << output["pose"].dump() << endl;
+      cout << "k = " << k << ", Tc = " << output["debug"]["Tc"] << ": "
+           << output["pose"].dump() << endl;
   }
 
   return 0;
