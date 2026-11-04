@@ -1,0 +1,62 @@
+# director example configuration
+# Notes:
+# - [director] is optional global settings.
+# - Each top-level section name is the process name (mandatory).
+# - All options are shown below with defaults and purpose.
+
+[director] # optional: global director settings
+terminal = "" # optional, default="": terminal executable for detached attach windows
+sample_rate = 2.0 # optional, default=2.0: process metrics sampling period in seconds (fractions allowed)
+
+[broker] # process section name (mandatory)
+command = "mads broker -s ego_state_filter.ini" # mandatory: command line to execute
+# command supports variables: ${PWD}=resolved workdir, ${ID}=instance index (0-based)
+after = "" # optional, default="": start after this process name
+workdir = "" # optional, default="": working directory; default and relative paths resolve against the director.toml directory
+enabled = true # optional, default=true: when false, skip auto-start (manual start still allowed)
+scale = 1 # optional, default=1: number of instances to launch
+relaunch = true # optional, default=false: restart on non-zero exit status
+tty = true # optional, default=false: enable TTY/attach interaction
+# if workdir/.venv exists, director exposes it to launched Python commands
+
+[ego_state_filter]
+command = "mads filter build\\Release\\ego_state_filter.plugin -n ego_state_filter" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+
+[gyro_bias_agent]
+command = "mads filter build\\Release\\gyro_bias_agent.plugin -n gyro_bias_agent" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+
+
+[rerun]
+command = "rerun --renderer gl" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+enabled = true
+
+[rerunner]
+command = "mads sink rerunner.plugin -n rerunner_ego" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+enabled = false
+
+[rerunner_debug]
+command = "mads sink rerunner.plugin -n rerunner_test" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+enabled = false
+
+[play]
+command = "mads play --input test_3.bag --rate 3 --restamp" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+enabled = false
+
+[chat]
+command = "mads chat" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+enabled = false
+
+[rerunner3D]
+command = "mads sink rerunner.plugin -n rerunner3D" # mandatory: command line to execute
+after = "broker" # optional, default="": start after this process name
+enabled = false
+
+
+

@@ -270,7 +270,7 @@ public:
     double y_F = _y_filter.step(y_E, _y_H);
 
     // ---- 10. Fused pose -------------------------------------------------
-    write_output(out, x_F, y_F, wrap(delta_F));
+    write_output(out, x_F, y_F, delta_F);
 
     // Extra fields, useful for debugging/plotting the single branches
     out["debug"] = {
@@ -399,7 +399,7 @@ private:
   // rho_k = f_rho(|ds_R| + |ds_L|), in [0, 1]: 0 = standing, 1 = moving
   double motion_index(double ds_R, double ds_L) {
     double s = fabs(ds_R) + fabs(ds_L);
-    double scale = 0.02; //[m] needs tuning
+    double scale = 0.001; //[m] needs tuning
     return 1.0 - exp(-s/scale);
   }
 
