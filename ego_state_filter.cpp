@@ -6,11 +6,9 @@
  |_|   |_|_|\__\___|_|    | .__/|_|\__,_|\__, |_|_| |_|
                           |_|            |___/
 # Ego-state complementary filter for the robotic walker
-# Robotics Perception and Action - Courses Project, Complementary Filtering
-# Based on the MADS 1.4.0 filter plugin template (my_filter.cpp)
 #
 # Inputs (sub_topic):  driver, calibrated_imu, htc
-# Output (pub_topic):  ego_state_<group number>   (set in the .ini file)
+# Output (pub_topic):  ego_state_6 
 #
 # The perception loop follows the flowchart given for the project:
 #   1. Encoder increments             -> ds_E, ddelta_E
@@ -31,11 +29,12 @@
 #include <nlohmann/json.hpp>
 #include <pugg/Kernel.h>
 
-// other includes as needed here
+// other includes
 #include <array>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
+
 
 // Define the name of the plugin
 #ifndef PLUGIN_NAME
@@ -80,7 +79,7 @@ static double message_time(json const &msg) {
 
 // Third-order discrete IIR filter:
 //   y_k = -sum_{i=1..3} a_i y_{k-i} + sum_{i=0..3} b_i x_{k-i}
-// Coefficients come from MATLAB c2d(..., 'tustin') + tfdata(..., 'v').
+// Coefficients come from MATLAB 
 struct Iir3 {
   array<double, 4> b = {1.0, 0.0, 0.0, 0.0};
   array<double, 4> a = {1.0, 0.0, 0.0, 0.0};
@@ -88,7 +87,7 @@ struct Iir3 {
   array<double, 3> y_hist = {0.0, 0.0, 0.0}; // y_{k-1}, y_{k-2}, y_{k-3}
 
   void set_coefficients(array<double, 4> const &b_new, array<double, 4> const &a_new) {
-    // normalize so that a_0 = 1
+    // normalize
     for (int i = 0; i < 4; i++) {
       b[i] = b_new[i] / a_new[0];
       a[i] = a_new[i] / a_new[0];
@@ -113,9 +112,9 @@ struct Iir3 {
 };
 
 // Complementary filter: F = H_HP{relative estimate} + H_LP{absolute measure}
-// with H_HP + H_LP = 1 (i.e. b_hp + b_lp = a)
+// with H_HP + H_LP = 1 
 struct ComplementaryFilter {
-  Iir3 hp; // high-pass branch: encoder / encoder-gyro estimate
+  Iir3 hp; // high-pass branch: encoder-gyro estimate
   Iir3 lp; // low-pass branch: HTC absolute measurement
 
   void set_coefficients(array<double, 4> const &b_hp,
@@ -146,8 +145,6 @@ static array<double, 4> read_coeffs(json const &j, string const &key,
 }
 
 
-// Plugin class. This shall be the only part that needs to be modified,
-// implementing the actual functionality
 class EgoStateFilterPlugin : public Filter<json, json> {
 
 public:
@@ -170,7 +167,7 @@ public:
       _imu_received = true;
 
       // Integrate the gyro between two loop iterations, so that no IMU
-      // sample is lost when the loop runs slower than the IMU (step 2)
+      // sample is lost when the loop runs slower than the IMU
       double t = message_time(input);
       double dt = t - _imu_time_prev;
       if (_initialized && _imu_time_prev >= 0.0 && dt > 0.0 && dt < _max_imu_gap)
@@ -190,9 +187,8 @@ public:
       _htc_received = true;
     }
     else if (topic == "gyro_bias") {
-      // Estimate from gyro_bias_agent (published only while standing still);
-      // keep the previous value if the field is missing
-      _gyro_bias = input.value("bias", _gyro_bias);
+      // Estimate from gyro_bias_agent
+      _gyro_bias = input.value("gyro_bias", _gyro_bias);
     }
     return return_type::success;
   }
@@ -200,8 +196,7 @@ public:
   // One iteration k-1 -> k of the perception loop 
   return_type process(json &out, vector<unsigned char> *blob = nullptr) override {
     out.clear();
-    // Run only once per new encoder sample
-    // TODO: check that return_type::retry makes the agent skip publishing
+    
     if (!_new_driver) return return_type::retry;
     _new_driver = false;
 
@@ -228,7 +223,7 @@ public:
     // HTC attitude made continuous, so it can be filtered together with delta_EG
     double delta_H = unwrap_htc_attitude(_delta_H_raw);
 
-    // ---- 1. Encoder increments ------------------------------------------
+    // 1. Encoder increments ------------------------------------------
     double dn_R = _n_R - _n_R_prev;
     double dn_L = _n_L - _n_L_prev;
     double ds_R = 2.0 * M_PI * _wheel_radius / _counts_per_rev * dn_R;
@@ -236,23 +231,23 @@ public:
     double ds_E = (ds_R + ds_L) / 2.0;
     double ddelta_E = (ds_R - ds_L) / _wheel_base;
 
-    // ---- 2. Gyro increment ----------------------------------------------
+    // 2. Gyro increment 
     // Sum of (omega_G - b_G) * dt over the IMU samples since the last
     // iteration (integrated in load_data)
     double ddelta_G = _gyro_angle;
     _gyro_angle = 0.0;
 
-    // ---- 3. Maneuver-dependent weights ----------------------------------
+    // 3. Maneuver-dependent weights 
     double mu = turning_index(ds_R, ds_L);
     double rho = motion_index(ds_R, ds_L);
     double xi_R = accuracy_ratio(mu, rho);
 
-    // ---- 4. Encoder-gyro attitude fusion --------------------------------
+    // 4. Encoder-gyro attitude fusion 
     double w_E = 1.0 / (1.0 + xi_R * xi_R);
     double w_G = xi_R * xi_R / (1.0 + xi_R * xi_R);
     double ddelta_EG = w_E * ddelta_E + w_G * ddelta_G;
 
-    // ---- 5. Relative attitude estimate ----------------------------------
+    // 5. Relative attitude estimate 
     double delta_EG = _delta_EG_prev + ddelta_EG;
 
     // Dead reckoning with the encoder-gyro attitude only (no HTC)
@@ -260,21 +255,21 @@ public:
     _x_DR += ds_E * cos(delta_EG_mean);
     _y_DR += ds_E * sin(delta_EG_mean);
 
-    // ---- 6. Attitude complementary filter -------------------------------
+    // 6. Attitude complementary filter 
     double delta_F = _attitude_filter.step(delta_EG, delta_H);
 
-    // ---- 7. Encoder position estimate -----------------------------------
+    // 7. Encoder position estimate
     double delta_F_mean = (_delta_F_prev + delta_F) / 2.0;
     double x_E = _x_E_prev + ds_E * cos(delta_F_mean);
     double y_E = _y_E_prev + ds_E * sin(delta_F_mean);
 
-    // ---- 8. Position complementary filter (x) ---------------------------
+    // 8. Position complementary filter (x) 
     double x_F = _x_filter.step(x_E, _x_H);
 
-    // ---- 9. Position complementary filter (y) ---------------------------
+    //9. Position complementary filter (y) 
     double y_F = _y_filter.step(y_E, _y_H);
 
-    // ---- 10. Fused pose -------------------------------------------------
+    // 10. Fused pose
     write_output(out, x_F, y_F, delta_F);
 
     // Extra fields, useful for debugging/plotting the single branches
@@ -295,7 +290,7 @@ public:
     };
 
 
-    // ---- 11. Update stored states for next iteration --------------------
+    //  11. Update stored states for next iteration 
     // (filter histories are updated inside Iir3::step)
     _n_R_prev = _n_R;
     _n_L_prev = _n_L;
@@ -317,10 +312,9 @@ public:
     // Defaults first, then merge the actually provided parameters,
     // then read the values (so the .ini file overrides the defaults)
     // TODO: replace the dummy values with the real walker parameters
-    _params["wheel_radius"] = 0.1;     // [m]
-    _params["wheel_base"] = 0.5;       // [m]
+    _params["wheel_radius"] = 0.09;     // [m]
+    _params["wheel_base"] = 0.91;       // [m]
     _params["counts_per_rev"] = 4096;  // [tics/rev]
-    _params["imu"]["sigma_gyro"] = 0.01; // [rad/s]
     _params["gyro_bias"] = 0.0;        // [rad/s]
     _params["Tc"] = 0.03;              // [s] nominal perception-loop period
 
@@ -339,7 +333,6 @@ public:
     _wheel_radius = _params["wheel_radius"].get<double>();
     _wheel_base = _params["wheel_base"].get<double>();
     _counts_per_rev = _params["counts_per_rev"].get<double>();
-    _sigma_gyro = _params["imu"]["sigma_gyro"].get<double>();
     _gyro_bias = _params["gyro_bias"].get<double>();
     _Tc = _params["Tc"].get<double>();
 
@@ -365,14 +358,13 @@ public:
     return {
       {"wheel_radius", to_string(_wheel_radius)},
       {"wheel_base", to_string(_wheel_base)},
-      {"sigma_gyro", to_string(_sigma_gyro)},
       {"Tc", to_string(_Tc)}
     };
   };
 
 private:
 
-  // ---- Initialization ---------------------------------------------------
+  //Initialization
   // Start all relative estimates from the first HTC pose, and fill the
   // filter histories with a steady state
   void initialize() {
@@ -408,7 +400,7 @@ private:
     return _delta_H_unwrapped;
   }
 
-  // ---- Step 3 helpers ---------------------------------------------------
+  //  Step 3 helpers 
   // mu_k: 0 = straight path, 1 = turning on the spot 
   double turning_index(double ds_R, double ds_L) {
     return fabs(ds_R - ds_L) / (fabs(ds_R) + fabs(ds_L) + _epsilon);
@@ -426,7 +418,7 @@ private:
     return rho*(0.25+3.75*mu);
   }
 
-  // ---- Step 10 helper ---------------------------------------------------
+  //  Step 10 helper 
   // Fused pose as a 4x4 homogeneous transformation 
   void write_output(json &out, double x, double y, double delta) {
     double c = cos(delta), s = sin(delta);
@@ -439,17 +431,16 @@ private:
     out["pose"] = {{"x", x}, {"y", y}, {"delta", delta}};
   }
 
-  // ---- Parameters -------------------------------------------------------
-  double _wheel_radius = 0.1;
-  double _wheel_base = 0.5;
+  // Parameters 
+  double _wheel_radius = 0.09;
+  double _wheel_base = 0.91;
   double _counts_per_rev = 4096;
-  double _sigma_gyro = 0.01;
   double _gyro_bias = 0.0;
   double _Tc = 0.03;
   double _epsilon = 1e-9;
   double _max_imu_gap = 0.2;       // [s] longer IMU gaps are not integrated
 
-  // ---- Latest input data ------------------------------------------------
+  // Latest input data 
   double _n_R = 0.0, _n_L = 0.0;   // cumulative encoder counts
   double _driver_time = 0.0;       // driver message time [s]
   double _omega_G = 0.0;           // gyro yaw rate [rad/s]
@@ -463,7 +454,7 @@ private:
   bool _htc_received = false;
   bool _initialized = false;
 
-  // ---- States at k-1 ----------------------------------------------------
+  // States at k-1 
   double _n_R_prev = 0.0, _n_L_prev = 0.0;
   double _driver_time_prev = 0.0;
   double _delta_EG_prev = 0.0;
@@ -472,7 +463,7 @@ private:
   double _x_E_prev = 0.0, _y_E_prev = 0.0;
   double _delta_H_prev = 0.0, _delta_H_unwrapped = 0.0;
 
-  // ---- Complementary filters --------------------------------------------
+  // Complementary filters
   ComplementaryFilter _attitude_filter;
   ComplementaryFilter _x_filter;
   ComplementaryFilter _y_filter;

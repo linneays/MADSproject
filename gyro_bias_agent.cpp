@@ -78,8 +78,7 @@ public:
 
     // 4. Always send the latest estimate (frozen while moving)
     out["gyro_bias"] = _bias;         // [rad/s]
-    // out["standing"] = standing;  // for debugging/plotting
-
+   
     if (!_agent_id.empty()) out["agent_id"] = _agent_id;
     return return_type::success;
   }
@@ -125,8 +124,6 @@ private:
 MADS_REGISTER_PLUGINS(GyroBiasAgentPlugin);
 
 
-// Quick test: stand 100 samples, move 100 samples, stand again.
-// Expected: bias settles near -0.004 and stays frozen while "standing" is false.
 int main(int argc, char const *argv[])
 {
   GyroBiasAgentPlugin plugin;
