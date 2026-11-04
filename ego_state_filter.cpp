@@ -255,6 +255,11 @@ public:
     // ---- 5. Relative attitude estimate ----------------------------------
     double delta_EG = _delta_EG_prev + ddelta_EG;
 
+    // Dead reckoning with the encoder-gyro attitude only (no HTC)
+    double delta_EG_mean = (_delta_EG_prev + delta_EG) / 2.0;
+    _x_DR += ds_E * cos(delta_EG_mean);
+    _y_DR += ds_E * sin(delta_EG_mean);
+
     // ---- 6. Attitude complementary filter -------------------------------
     double delta_F = _attitude_filter.step(delta_EG, delta_H);
 
@@ -277,9 +282,18 @@ public:
       {"Tc", Tc}, {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
       {"mu", mu}, {"rho", rho}, {"xi_R", xi_R},
       {"delta_EG", delta_EG}, {"delta_H", delta_H}, {"delta_F", delta_F},
-      {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H},
-  
+      {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H},{"x_DR", _x_DR}, {"y_DR", _y_DR},
+
     };
+    // Dead-reckoning pose as a homogeneous matrix, for the 3D view
+    double c = cos(delta_EG), s = sin(delta_EG);
+    out["debug"]["H_DR"] = {
+      {c,  -s,  0.0, _x_DR},
+      {s,   c,  0.0, _y_DR},
+      {0.0, 0.0, 1.0, 0.0},
+      {0.0, 0.0, 0.0, 1.0}
+    };
+
 
     // ---- 11. Update stored states for next iteration --------------------
     // (filter histories are updated inside Iir3::step)
@@ -376,6 +390,10 @@ private:
     _x_E_prev = _x_H;
     _y_E_prev = _y_H;
 
+    _x_DR = _x_H;
+    _y_DR = _y_H;
+
+
     _attitude_filter.reset(_delta_H_raw);
     _x_filter.reset(_x_H);
     _y_filter.reset(_y_H);
@@ -449,6 +467,7 @@ private:
   double _n_R_prev = 0.0, _n_L_prev = 0.0;
   double _driver_time_prev = 0.0;
   double _delta_EG_prev = 0.0;
+  double _x_DR = 0.0, _y_DR = 0.0;   // dead reckoning: encoders + gyro only, no HTC
   double _delta_F_prev = 0.0;
   double _x_E_prev = 0.0, _y_E_prev = 0.0;
   double _delta_H_prev = 0.0, _delta_H_unwrapped = 0.0;
