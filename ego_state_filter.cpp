@@ -156,7 +156,6 @@ public:
   // The perception loop is triggered by the driver (encoder) topic.
   return_type load_data(json const &input, string topic = "", vector<unsigned char> const *blob = nullptr) override {
     if (topic == "driver") {
-      if (!input.contains("encoders")) return return_type::error;
       _n_L = input["encoders"].value("left", 0.0);
       _n_R = input["encoders"].value("right", 0.0);
       _driver_time = message_time(input);
@@ -176,7 +175,6 @@ public:
     }
     else if (topic == "htc") {
       // Htracker = midpoint between the wheels (Htracker_raw = tracker itself)
-      if (!input.contains("Htracker")) return return_type::error;
       json const &pose = input["Htracker"]["pose"];
       _x_H = pose["position"][0].get<double>();
       _y_H = pose["position"][1].get<double>();
@@ -217,19 +215,16 @@ public:
     if (_driver_time >= _next_loop_time)       // gap in the data: restart
       _next_loop_time = _driver_time + _Tc;
 
-    // Actual duration of this iteration (for debugging)
-    double Tc = _driver_time - _driver_time_prev;
-
     // HTC attitude made continuous, so it can be filtered together with delta_EG
     double delta_H = unwrap_htc_attitude(_delta_H_raw);
 
-    // 1. Encoder increments ------------------------------------------
+    // 1. Encoder increments 
     double dn_R = _n_R - _n_R_prev;
     double dn_L = _n_L - _n_L_prev;
-    double ds_R = 2.0 * M_PI * _wheel_radius / _counts_per_rev * dn_R;
-    double ds_L = 2.0 * M_PI * _wheel_radius / _counts_per_rev * dn_L;
-    double ds_E = (ds_R + ds_L) / 2.0;
-    double ddelta_E = (ds_R - ds_L) / _wheel_base;
+    double ds_R = 2.0 * M_PI * _wheel_radius / _counts_per_rev * dn_R; // Arc length travelled by the right wheel [m]
+    double ds_L = 2.0 * M_PI * _wheel_radius / _counts_per_rev * dn_L; // Arc length travelled by the left wheel [m]
+    double ds_E = (ds_R + ds_L) / 2.0; // forward displacement of the wheel midpoint 
+    double ddelta_E = (ds_R - ds_L) / _wheel_base; // attitude increment [rad]
 
     // 2. Gyro increment 
     // Sum of (omega_G - b_G) * dt over the IMU samples since the last
@@ -238,9 +233,9 @@ public:
     _gyro_angle = 0.0;
 
     // 3. Maneuver-dependent weights 
-    double mu = turning_index(ds_R, ds_L);
+    double mu = turning_index(ds_R, ds_L); 
     double rho = motion_index(ds_R, ds_L);
-    double xi_R = accuracy_ratio(mu, rho);
+    double xi_R = accuracy_ratio(mu, rho); 
 
     // 4. Encoder-gyro attitude fusion 
     double w_E = 1.0 / (1.0 + xi_R * xi_R);
@@ -249,11 +244,6 @@ public:
 
     // 5. Relative attitude estimate 
     double delta_EG = _delta_EG_prev + ddelta_EG;
-
-    // Dead reckoning with the encoder-gyro attitude only (no HTC)
-    double delta_EG_mean = (_delta_EG_prev + delta_EG) / 2.0;
-    _x_DR += ds_E * cos(delta_EG_mean);
-    _y_DR += ds_E * sin(delta_EG_mean);
 
     // 6. Attitude complementary filter 
     double delta_F = _attitude_filter.step(delta_EG, delta_H);
@@ -274,21 +264,12 @@ public:
 
     // Extra fields, useful for debugging/plotting the single branches
     out["debug"] = {
-      {"Tc", Tc}, {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
+      {"ds_E", ds_E}, {"ddelta_E", ddelta_E}, {"ddelta_G", ddelta_G},
       {"mu", mu}, {"rho", rho}, {"xi_R", xi_R},
       {"delta_EG", delta_EG}, {"delta_H", delta_H}, {"delta_F", delta_F},
-      {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H},{"x_DR", _x_DR}, {"y_DR", _y_DR},
+      {"x_E", x_E}, {"y_E", y_E}, {"x_H", _x_H}, {"y_H", _y_H},
 
     };
-    // Dead-reckoning pose as a homogeneous matrix, for the 3D view
-    double c = cos(delta_EG), s = sin(delta_EG);
-    out["debug"]["H_DR"] = {
-      {c,  -s,  0.0, _x_DR},
-      {s,   c,  0.0, _y_DR},
-      {0.0, 0.0, 1.0, 0.0},
-      {0.0, 0.0, 0.0, 1.0}
-    };
-
 
     //  11. Update stored states for next iteration 
     // (filter histories are updated inside Iir3::step)
@@ -311,15 +292,13 @@ public:
 
     // Defaults first, then merge the actually provided parameters,
     // then read the values (so the .ini file overrides the defaults)
-    // TODO: replace the dummy values with the real walker parameters
     _params["wheel_radius"] = 0.09;     // [m]
     _params["wheel_base"] = 0.91;       // [m]
     _params["counts_per_rev"] = 4096;  // [tics/rev]
     _params["gyro_bias"] = 0.0;        // [rad/s]
-    _params["Tc"] = 0.03;              // [s] nominal perception-loop period
+    _params["Tc"] = 0.03;              // [s] 
 
-    // Dummy filter coefficients: HP branch = 0, LP branch = 1, i.e. the
-    // output is just the HTC measurement. 
+    // Dummy filter coefficients: HP branch = 0, LP branch = 1, i.e. the output is just the HTC measurement. 
     _params["attitude_filter"] = {
       {"a",    {1.0, 0.0, 0.0, 0.0}},
       {"b_hp", {0.0, 0.0, 0.0, 0.0}},
@@ -353,20 +332,14 @@ public:
                                read_coeffs(pos, "a", one));
   }
 
-  // Implement this method if you want to provide additional information
-  map<string, string> info() override {
-    return {
-      {"wheel_radius", to_string(_wheel_radius)},
-      {"wheel_base", to_string(_wheel_base)},
-      {"Tc", to_string(_Tc)}
+    //Implement this method if you want to provide additional information
+    map<string, string> info() override {
+      return { };
     };
-  };
-
 private:
 
   //Initialization
-  // Start all relative estimates from the first HTC pose, and fill the
-  // filter histories with a steady state
+  // Start all relative estimates from the first HTC pose, and fill the filter histories with a steady state
   void initialize() {
     _n_R_prev = _n_R;
     _n_L_prev = _n_L;
@@ -409,7 +382,7 @@ private:
   // rho_k = f_rho(|ds_R| + |ds_L|), in [0, 1]: 0 = standing, 1 = moving
   double motion_index(double ds_R, double ds_L) {
     double s = fabs(ds_R) + fabs(ds_L);
-    double scale = 0.001; //[m] needs tuning
+    double scale = 0.001; //[m] tunable
     return 1.0 - exp(-s/scale);
   }
 
