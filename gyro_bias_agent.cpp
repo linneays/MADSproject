@@ -1,14 +1,11 @@
 /*
-/*
-# Gyro bias agent
-#
-# Inputs  (sub_topic): driver (encoders), calibrated_imu (gyro)
-# Output  (pub_topic): gyro_bias -> { gyro_bias }
-#
-# Idea:
-#   - standing still  -> the true rotation is 0, so the gyro reading IS the bias
-#                        -> update the estimate (running average)
-#   - moving          -> do NOT update, just keep sending the last estimate
+Gyro bias agent
+Inputs  (sub_topic): driver (encoders), calibrated_imu (gyro)
+Output  (pub_topic): gyro_bias -> { gyro_bias }
+Idea:
+  - standing still:   the true rotation is 0, so the gyro reading is the bias
+                        -update the estimate (running average)
+  - moving: do not update, just keep sending the last estimate
 */
 #include <filter.hpp>
 #include <nlohmann/json.hpp>
@@ -95,15 +92,12 @@ public:
   }
 
   map<string, string> info() override {
-    return {
-      {"still_min", to_string(_still_min)},
-      {"alpha", to_string(_alpha)}
-    };
+    return {};
   };
 
 private:
   // parameters (can be overridden in the .ini file)
-  int _still_min = 60;     // about 0.5 s if driver runs at ~125 Hz
+  int _still_min = 60;
   double _alpha = 0.01;    // each standing sample moves the estimate 1% of the way
 
   // encoder state
