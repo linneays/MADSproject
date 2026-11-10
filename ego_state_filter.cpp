@@ -7,7 +7,7 @@
                           |_|            |___/
 # Ego-state complementary filter for the robotic walker
 #
-# Inputs (sub_topic):  driver, calibrated_imu, htc
+# Inputs (sub_topic):  driver, calibrated_imu, htc, gyro_bias
 # Output (pub_topic):  ego_state_6 
 #
 # The perception loop follows the flowchart given for the project:
@@ -353,10 +353,6 @@ private:
     _delta_F_prev = _delta_H_raw;
     _x_E_prev = _x_H;
     _y_E_prev = _y_H;
-
-    _x_DR = _x_H;
-    _y_DR = _y_H;
-
 
     _attitude_filter.reset(_delta_H_raw);
     _x_filter.reset(_x_H);
