@@ -163,7 +163,6 @@ public:
     }
     else if (topic == "calibrated_imu") {
       _omega_G = input.value("gyro", 0.0);
-      _imu_received = true;
 
       // Integrate the gyro between two loop iterations, so that no IMU
       // sample is lost when the loop runs slower than the IMU
@@ -423,7 +422,6 @@ private:
   double _x_H = 0.0, _y_H = 0.0;   // HTC position [m]
   double _delta_H_raw = 0.0;       // HTC yaw [rad], wrapped
   bool _new_driver = false;
-  bool _imu_received = false;
   bool _htc_received = false;
   bool _initialized = false;
 
